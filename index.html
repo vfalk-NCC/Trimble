@@ -173,6 +173,29 @@
       </div>
     </div>
 
+    <div class="row">
+      <div>
+        <label>Bubblans riktning</label>
+        <select id="bubbleDirection">
+          <option value="up">Rakt upp</option>
+          <option value="up-left" selected>Upp-vänster</option>
+          <option value="up-right">Upp-höger</option>
+        </select>
+      </div>
+      <div>
+        <label>Avstånd (meter)</label>
+        <input type="text" id="bubbleDistance" value="1.5" />
+      </div>
+    </div>
+    <div class="toggle-row">
+      <label style="margin:0;">Rita svans till objektet</label>
+      <input type="checkbox" id="bubbleTail" checked />
+    </div>
+    <div class="toggle-row">
+      <label style="margin:0;">Rita molnram runt texten (experimentell)</label>
+      <input type="checkbox" id="bubbleCloud" checked />
+    </div>
+
     <label>Egenskaper som hämtas automatiskt från objektet</label>
     <div class="propsPreview" id="propsPreview"></div>
 
@@ -194,7 +217,7 @@
   let currentSelection = null;      // { modelId, objectRuntimeId }
   let currentBox = null;            // Box3 (meters)
   let currentProperties = [];       // flattened [{k,v}]
-  let comments = [];                // session-only storage: {id, markupId, color, icon, text, title, props, position}
+  let comments = [];                // session-only storage: {id, markupIds:{pin,tail,text,cloud}, color, icon, text, title, props, position}
   let nextLocalId = 1;
 
   const settings = {
@@ -276,7 +299,7 @@
   el("btnClear").onclick = async () => {
     if(!confirm("Ta bort alla kommentarer och pins från den här sessionen?")) return;
     if(API){
-      const ids = comments.map(c => c.markupId).filter(Boolean);
+      const ids = comments.flatMap(c => Object.values(c.markupIds || {})).filter(Boolean);
       if(ids.length) await API.markup.removeMarkups(ids);
     }
     comments = [];
@@ -307,45 +330,109 @@
     return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
   }
 
+  function makePick(modelId, x, y, z, objectId){
+    const pick = { modelId, positionX: x, positionY: y, positionZ: z, type: "point" };
+    if(objectId !== undefined) pick.objectId = objectId;
+    return pick;
+  }
+
+  // Builds a wobbly, hand-drawn-looking closed loop of points around a center,
+  // in the world XZ-plane (vertical), to approximate a "cloud" bubble outline.
+  function buildCloudLoop(cx, cy, cz, radiusMM){
+    const pts = [];
+    const steps = 16;
+    for(let i = 0; i <= steps; i++){
+      const t = (i / steps) * Math.PI * 2;
+      const wobble = 1 + (Math.sin(t * 3.7) * 0.12) + (Math.cos(t * 5.3) * 0.08);
+      const r = radiusMM * wobble;
+      pts.push({
+        modelId: currentSelection.modelId,
+        positionX: cx + Math.cos(t) * r,
+        positionY: cy,
+        positionZ: cz + Math.sin(t) * r * 0.6, // flattened a bit, like an oval speech bubble
+        type: "point"
+      });
+    }
+    return pts;
+  }
+
   async function onSaveComment(){
     if(!currentSelection || !currentBox) return;
     const text = el("commentText").value.trim();
     if(!text){ alert("Skriv en kommentar först."); return; }
 
-    // Center of the object's bounding box, converted from meters to millimeters
+    const modelId = currentSelection.modelId;
+    const objectRuntimeId = currentSelection.objectRuntimeId;
+
+    // Anchor = center of the object's bounding box, converted meters -> millimeters
     const min = currentBox.min, max = currentBox.max;
-    const cx = (min.x + max.x) / 2 * 1000;
-    const cy = (min.y + max.y) / 2 * 1000;
-    const cz = (min.z + max.z) / 2 * 1000;
+    const ax = (min.x + max.x) / 2 * 1000;
+    const ay = (min.y + max.y) / 2 * 1000;
+    const az = (min.z + max.z) / 2 * 1000;
 
-    const localId = nextLocalId++;
-    let markupId = null;
+    // Bubble position = anchor + offset, based on chosen direction/distance
+    const distanceMM = (parseFloat(el("bubbleDistance").value) || 1.5) * 1000;
+    const direction = el("bubbleDirection").value;
+    let offsetX = 0, offsetZ = distanceMM; // "up" -> straight up in Z
+    if(direction === "up-left"){ offsetX = -distanceMM * 0.7; offsetZ = distanceMM * 0.7; }
+    if(direction === "up-right"){ offsetX = distanceMM * 0.7; offsetZ = distanceMM * 0.7; }
+    const bx = ax + offsetX, by = ay, bz = az + offsetZ;
 
+    const rgba = hexToRgba(formState.color);
+    const markupIds = { pin: null, tail: null, text: null, cloud: null };
+
+    // 1. Small pin exactly on the object, so it's clear what the comment refers to
     try {
       const added = await API.markup.addSinglePointMarkups([{
-        color: hexToRgba(formState.color),
-        start: {
-          modelId: currentSelection.modelId,
-          objectId: currentSelection.objectRuntimeId,
-          positionX: cx, positionY: cy, positionZ: cz,
-          type: "point"
-        }
+        color: rgba,
+        start: makePick(modelId, ax, ay, az, objectRuntimeId)
       }]);
-      if(added && added[0]) markupId = added[0].id;
-    } catch(err){
-      console.warn("Kunde inte skapa pin i 3D-vyn, sparar ändå kommentaren lokalt:", err);
+      if(added && added[0]) markupIds.pin = added[0].id;
+    } catch(err){ console.warn("Kunde inte skapa pin:", err); }
+
+    // 2. Tail: arrow from the bubble position down to the object (points at what it refers to)
+    if(el("bubbleTail").checked){
+      try {
+        const added = await API.markup.addArrowMarkups([{
+          color: rgba,
+          start: makePick(modelId, bx, by, bz),
+          end: makePick(modelId, ax, ay, az, objectRuntimeId)
+        }]);
+        if(added && added[0]) markupIds.tail = added[0].id;
+      } catch(err){ console.warn("Kunde inte rita svans (arrow markup):", err); }
     }
 
+    // 3. Cloud-shaped outline around the bubble text (experimental — API for this
+    //    is not fully documented publicly, so this fails silently on older versions)
+    if(el("bubbleCloud").checked){
+      try {
+        const points = buildCloudLoop(bx, by, bz, Math.max(400, text.length * 35));
+        const added = await API.markup.addCloudMarkup([{ color: rgba, points }]);
+        if(added && added[0]) markupIds.cloud = added[0].id;
+      } catch(err){ console.warn("Kunde inte rita molnram (stöds ev. inte i denna version):", err); }
+    }
+
+    // 4. The text itself, floating at the bubble position
+    const shortText = text.length > 90 ? text.slice(0, 87) + "…" : text;
+    try {
+      const added = await API.markup.addTextMarkup([{
+        color: rgba,
+        start: makePick(modelId, bx, by, bz),
+        text: `${formState.icon} ${shortText}`
+      }]);
+      if(added && added[0]) markupIds.text = added[0].id;
+    } catch(err){ console.warn("Kunde inte skapa textmarkup:", err); }
+
+    const localId = nextLocalId++;
     comments.push({
       id: localId,
-      markupId,
+      markupIds,
       color: formState.color,
       icon: formState.icon,
       text,
-      title: currentTitle || "Objekt " + currentSelection.objectRuntimeId,
+      title: currentTitle || "Objekt " + objectRuntimeId,
       props: currentProperties.slice(),
-      modelId: currentSelection.modelId,
-      objectRuntimeId: currentSelection.objectRuntimeId
+      modelId, objectRuntimeId
     });
 
     formEl.classList.remove("open");
@@ -363,8 +450,9 @@
     const idx = comments.findIndex(c => c.id === localId);
     if(idx === -1) return;
     const c = comments[idx];
-    if(c.markupId && API){
-      try { await API.markup.removeMarkups([c.markupId]); } catch(e){}
+    const ids = Object.values(c.markupIds || {}).filter(v => v !== null && v !== undefined);
+    if(ids.length && API){
+      try { await API.markup.removeMarkups(ids); } catch(e){}
     }
     comments.splice(idx, 1);
     renderList();
