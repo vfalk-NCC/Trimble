@@ -123,6 +123,7 @@
     <button class="primary" id="btnAdd" disabled>+ Ny kommentar på valt objekt</button>
     <button class="ghost" id="btnRefresh" title="Uppdatera om markeringen inte känns igen automatiskt">↻ Uppdatera markering</button>
     <button class="ghost" id="btnSettings">⚙ Utseende</button>
+    <button class="ghost" id="btnDebug" title="Skriver ut skapade markups i webbläsarens konsol (F12)">🐞 Debug</button>
     <button class="ghost" id="btnClear">Rensa alla</button>
   </div>
 
@@ -186,6 +187,10 @@
         <label>Avstånd (meter)</label>
         <input type="text" id="bubbleDistance" value="1.5" />
       </div>
+    </div>
+    <div class="toggle-row">
+      <label style="margin:0;">Visa punkt-markör på objektet (Trimbles inbyggda koordinatetikett)</label>
+      <input type="checkbox" id="bubblePin" />
     </div>
     <div class="toggle-row">
       <label style="margin:0;">Rita svans till objektet</label>
@@ -381,14 +386,18 @@
     const rgba = hexToRgba(formState.color);
     const markupIds = { pin: null, tail: null, text: null, cloud: null };
 
-    // 1. Small pin exactly on the object, so it's clear what the comment refers to
-    try {
-      const added = await API.markup.addSinglePointMarkups([{
-        color: rgba,
-        start: makePick(modelId, ax, ay, az, objectRuntimeId)
-      }]);
-      if(added && added[0]) markupIds.pin = added[0].id;
-    } catch(err){ console.warn("Kunde inte skapa pin:", err); }
+    // 1. Optional: small pin exactly on the object. OFF by default because
+    //    Trimble's own point-markup renders a built-in coordinate readout
+    //    label that can't be styled or hidden via the API.
+    if(el("bubblePin").checked){
+      try {
+        const added = await API.markup.addSinglePointMarkups([{
+          color: rgba,
+          start: makePick(modelId, ax, ay, az, objectRuntimeId)
+        }]);
+        if(added && added[0]) markupIds.pin = added[0].id;
+      } catch(err){ console.warn("Kunde inte skapa pin:", err); }
+    }
 
     // 2. Tail: arrow from the bubble position down to the object (points at what it refers to)
     if(el("bubbleTail").checked){
@@ -563,6 +572,29 @@
   }
 
   el("btnRefresh").onclick = refreshSelection;
+
+  el("btnDebug").onclick = async () => {
+    if(!API){ console.warn("Ej ansluten till API ännu."); return; }
+    try {
+      const [arrows, texts, clouds, points] = await Promise.all([
+        API.markup.getArrowMarkups(),
+        API.markup.getTextMarkups(),
+        API.markup.getCloudMarkups(),
+        API.markup.getSinglePointMarkups()
+      ]);
+      console.log("=== DEBUG: markups i vyn just nu ===");
+      console.log("Arrow markups:", arrows);
+      console.log("Text markups:", texts);
+      console.log("Cloud markups:", clouds);
+      console.log("Point markups:", points);
+      console.log("Mina sparade kommentarer (lokalt):", comments);
+      console.log("=====================================");
+      alert("Skrivet till konsolen (F12 → Console). Kopiera raderna under '=== DEBUG ===' och skicka till Claude.");
+    } catch(err){
+      console.error("Debug-hämtning misslyckades:", err);
+      alert("Kunde inte hämta markups, se konsolen för felet.");
+    }
+  };
 
   renderList();
   init();
