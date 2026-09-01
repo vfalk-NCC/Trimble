@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Snygga kommentarer – Trimble Connect</title>
+<script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+<style>
+  :root{
+    --bg: #ffffff;
+    --panel-bg: #f7f8fa;
+    --border: #e2e4e8;
+    --text: #1f2430;
+    --text-muted: #6b7280;
+    --accent: #d7263d;      /* default pin/comment color, matches your red circle style */
+    --accent-soft: #fdecee;
+    --radius: 10px;
+    --shadow: 0 2px 10px rgba(0,0,0,.08);
+    font-family: "Trimble Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text); font-size:13px; }
+  #app{ display:flex; flex-direction:column; height:100%; }
+
+  header{
+    padding:10px 12px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  header h1{ font-size:14px; margin:0; font-weight:600; }
+  header .status{ font-size:11px; color:var(--text-muted); }
+
+  .toolbar{ display:flex; gap:6px; padding:10px 12px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  button{
+    font: inherit; cursor:pointer; border:1px solid var(--border); background:#fff;
+    padding:6px 10px; border-radius:8px; color:var(--text);
+  }
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:disabled{ opacity:.5; cursor:not-allowed; }
+  button.ghost{ background:transparent; border-color:transparent; color:var(--text-muted); }
+  button:hover:not(:disabled){ filter:brightness(0.97); }
+
+  #selectionInfo{ padding:8px 12px; font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border); }
+  #selectionInfo b{ color:var(--text); }
+
+  #list{ flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:10px; }
+  .empty{ color:var(--text-muted); text-align:center; margin-top:40px; font-size:12px; }
+
+  /* --- The custom-styled popup/comment card --- */
+  .comment-card{
+    border-radius: var(--radius);
+    border:1px solid var(--border);
+    box-shadow: var(--shadow);
+    overflow:hidden;
+    background:#fff;
+  }
+  .comment-card .head{
+    display:flex; align-items:center; gap:8px;
+    padding:8px 10px;
+    background: var(--card-color, var(--accent));
+    color:#fff;
+  }
+  .comment-card .head .badge{
+    width:22px;height:22px;border-radius:50%;
+    background:rgba(255,255,255,.25);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700; font-size:11px; flex-shrink:0;
+  }
+  .comment-card .head .title{ font-weight:600; font-size:12.5px; flex:1; }
+  .comment-card .head .icon{ font-size:14px; }
+  .comment-card .body{ padding:10px; }
+  .comment-card .comment-text{ white-space:pre-wrap; margin:0 0 8px 0; line-height:1.4; }
+  .comment-card .props{
+    background:var(--panel-bg); border-radius:8px; padding:6px 8px; font-size:11.5px;
+  }
+  .comment-card .props div{ display:flex; justify-content:space-between; gap:8px; padding:2px 0; }
+  .comment-card .props .k{ color:var(--text-muted); }
+  .comment-card .props .v{ font-weight:500; text-align:right; }
+  .comment-card .foot{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:6px 10px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted);
+  }
+  .comment-card .foot .actions button{ padding:3px 7px; font-size:11px; border-radius:6px; }
+
+  /* --- Add-comment form (slide-down panel) --- */
+  #form{
+    border-bottom:1px solid var(--border);
+    padding:12px;
+    display:none;
+    background:var(--panel-bg);
+  }
+  #form.open{ display:block; }
+  #form label{ display:block; font-size:11.5px; color:var(--text-muted); margin:8px 0 4px; }
+  #form textarea, #form select, #form input[type=text]{
+    width:100%; font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--border);
+    background:#fff; color:var(--text);
+  }
+  #form textarea{ min-height:70px; resize:vertical; }
+  .row{ display:flex; gap:8px; }
+  .row > *{ flex:1; }
+  .swatches{ display:flex; gap:6px; margin-top:4px; }
+  .swatch{
+    width:22px; height:22px; border-radius:50%; cursor:pointer; border:2px solid transparent;
+  }
+  .swatch.selected{ border-color:#000; }
+  .propsPreview{ margin-top:6px; max-height:110px; overflow-y:auto; }
+  .form-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+
+  /* --- Settings panel --- */
+  #settings{ display:none; padding:12px; border-bottom:1px solid var(--border); background:var(--panel-bg); }
+  #settings.open{ display:block; }
+  #settings label{ display:block; font-size:11.5px; color:var(--text-muted); margin:8px 0 4px; }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; margin:6px 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>💬 Kommentar-pins</h1>
+    <span class="status" id="status">Ansluter…</span>
+  </header>
+
+  <div class="toolbar">
+    <button class="primary" id="btnAdd" disabled>+ Ny kommentar på valt objekt</button>
+    <button class="ghost" id="btnRefresh" title="Uppdatera om markeringen inte känns igen automatiskt">↻ Uppdatera markering</button>
+    <button class="ghost" id="btnSettings">⚙ Utseende</button>
+    <button class="ghost" id="btnClear">Rensa alla</button>
+  </div>
+
+  <div id="selectionInfo">Inget objekt valt i 3D-vyn.</div>
+
+  <!-- Settings / styling panel -->
+  <div id="settings">
+    <label>Standardfärg för nya pins/kort</label>
+    <div class="swatches" id="colorSwatches"></div>
+
+    <label>Standardikon</label>
+    <select id="defaultIcon">
+      <option value="💬">💬 Pratbubbla</option>
+      <option value="⚠️">⚠️ Varning</option>
+      <option value="✅">✅ Klar</option>
+      <option value="❓">❓ Fråga</option>
+      <option value="🔧">🔧 Åtgärd</option>
+      <option value="📷">📷 Foto</option>
+    </select>
+
+    <div class="toggle-row">
+      <label style="margin:0;">Visa IFC-egenskaper i korten</label>
+      <input type="checkbox" id="showProps" checked />
+    </div>
+    <div class="toggle-row">
+      <label style="margin:0;">Kortstorlek</label>
+      <select id="cardSize" style="width:auto;">
+        <option value="compact">Kompakt</option>
+        <option value="normal" selected>Normal</option>
+        <option value="large">Stor</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- New comment form -->
+  <div id="form">
+    <label>Kommentartext</label>
+    <textarea id="commentText" placeholder="Skriv din kommentar…"></textarea>
+
+    <div class="row">
+      <div>
+        <label>Ikon</label>
+        <select id="commentIcon"></select>
+      </div>
+      <div>
+        <label>Färg</label>
+        <div class="swatches" id="formSwatches"></div>
+      </div>
+    </div>
+
+    <label>Egenskaper som hämtas automatiskt från objektet</label>
+    <div class="propsPreview" id="propsPreview"></div>
+
+    <div class="form-actions">
+      <button class="ghost" id="btnCancel">Avbryt</button>
+      <button class="primary" id="btnSave">Spara kommentar</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+(function(){
+  const COLORS = ["#d7263d", "#2563eb", "#059669", "#d97706", "#7c3aed", "#0891b2"];
+  const ICONS = ["💬","⚠️","✅","❓","🔧","📷"];
+
+  let API = null;
+  let currentSelection = null;      // { modelId, objectRuntimeId }
+  let currentBox = null;            // Box3 (meters)
+  let currentProperties = [];       // flattened [{k,v}]
+  let comments = [];                // session-only storage: {id, markupId, color, icon, text, title, props, position}
+  let nextLocalId = 1;
+
+  const settings = {
+    color: COLORS[0],
+    icon: ICONS[0],
+    showProps: true,
+    cardSize: "normal"
+  };
+
+  const el = (id) => document.getElementById(id);
+  const statusEl = el("status");
+  const selectionInfoEl = el("selectionInfo");
+  const btnAdd = el("btnAdd");
+  const formEl = el("form");
+  const settingsEl = el("settings");
+  const listEl = el("list");
+
+  function buildSwatches(container, onPick, activeColor){
+    container.innerHTML = "";
+    COLORS.forEach(c => {
+      const s = document.createElement("div");
+      s.className = "swatch" + (c === activeColor ? " selected" : "");
+      s.style.background = c;
+      s.onclick = () => onPick(c, container);
+      container.appendChild(s);
+    });
+  }
+  function selectSwatch(container, color){
+    [...container.children].forEach(s => s.classList.toggle("selected", s.style.background === hexToRgbString(color) || s.style.backgroundColor === hexToRgbString(color)));
+  }
+  function hexToRgbString(hex){
+    // helper not strictly needed since we compare backgroundColor computed values; kept simple
+    return hex;
+  }
+
+  function buildIconOptions(select){
+    select.innerHTML = "";
+    ICONS.forEach(i => {
+      const o = document.createElement("option");
+      o.value = i; o.textContent = i;
+      select.appendChild(o);
+    });
+  }
+
+  buildSwatches(el("colorSwatches"), (c, container) => {
+    settings.color = c;
+    [...container.children].forEach(s => s.classList.toggle("selected", s.style.background === c));
+  }, settings.color);
+  el("defaultIcon").value = settings.icon;
+  el("defaultIcon").onchange = (e) => settings.icon = e.target.value;
+  el("showProps").onchange = (e) => { settings.showProps = e.target.checked; renderList(); };
+  el("cardSize").onchange = (e) => { settings.cardSize = e.target.value; renderList(); };
+
+  buildIconOptions(el("commentIcon"));
+  buildSwatches(el("formSwatches"), (c, container) => {
+    formState.color = c;
+    [...container.children].forEach(s => s.classList.toggle("selected", s.style.background === c));
+  }, settings.color);
+
+  let formState = { color: settings.color, icon: settings.icon };
+
+  el("btnSettings").onclick = () => settingsEl.classList.toggle("open");
+
+  el("btnAdd").onclick = async () => {
+    if(!currentSelection) return;
+    formState = { color: settings.color, icon: settings.icon };
+    el("commentIcon").value = settings.icon;
+    buildSwatches(el("formSwatches"), (c, container) => {
+      formState.color = c;
+      [...container.children].forEach(s => s.classList.toggle("selected", s.style.background === c));
+    }, settings.color);
+    el("commentText").value = "";
+    renderPropsPreview();
+    formEl.classList.add("open");
+  };
+
+  el("btnCancel").onclick = () => formEl.classList.remove("open");
+
+  el("btnClear").onclick = async () => {
+    if(!confirm("Ta bort alla kommentarer och pins från den här sessionen?")) return;
+    if(API){
+      const ids = comments.map(c => c.markupId).filter(Boolean);
+      if(ids.length) await API.markup.removeMarkups(ids);
+    }
+    comments = [];
+    renderList();
+  };
+
+  el("btnSave").onclick = onSaveComment;
+
+  function renderPropsPreview(){
+    const wrap = el("propsPreview");
+    wrap.innerHTML = "";
+    if(!currentProperties.length){
+      wrap.innerHTML = '<div style="color:var(--text-muted); font-size:11.5px;">Inga egenskaper hittades för objektet.</div>';
+      return;
+    }
+    currentProperties.slice(0, 12).forEach(p => {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.justifyContent = "space-between";
+      row.style.fontSize = "11.5px";
+      row.style.padding = "2px 0";
+      row.innerHTML = `<span style="color:var(--text-muted)">${escapeHtml(p.k)}</span><span style="font-weight:500; text-align:right; margin-left:8px;">${escapeHtml(p.v)}</span>`;
+      wrap.appendChild(row);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+  }
+
+  async function onSaveComment(){
+    if(!currentSelection || !currentBox) return;
+    const text = el("commentText").value.trim();
+    if(!text){ alert("Skriv en kommentar först."); return; }
+
+    // Center of the object's bounding box, converted from meters to millimeters
+    const min = currentBox.min, max = currentBox.max;
+    const cx = (min.x + max.x) / 2 * 1000;
+    const cy = (min.y + max.y) / 2 * 1000;
+    const cz = (min.z + max.z) / 2 * 1000;
+
+    const localId = nextLocalId++;
+    let markupId = null;
+
+    try {
+      const added = await API.markup.addSinglePointMarkups([{
+        color: hexToRgba(formState.color),
+        start: {
+          modelId: currentSelection.modelId,
+          objectId: currentSelection.objectRuntimeId,
+          positionX: cx, positionY: cy, positionZ: cz,
+          type: "point"
+        }
+      }]);
+      if(added && added[0]) markupId = added[0].id;
+    } catch(err){
+      console.warn("Kunde inte skapa pin i 3D-vyn, sparar ändå kommentaren lokalt:", err);
+    }
+
+    comments.push({
+      id: localId,
+      markupId,
+      color: formState.color,
+      icon: formState.icon,
+      text,
+      title: currentTitle || "Objekt " + currentSelection.objectRuntimeId,
+      props: currentProperties.slice(),
+      modelId: currentSelection.modelId,
+      objectRuntimeId: currentSelection.objectRuntimeId
+    });
+
+    formEl.classList.remove("open");
+    renderList();
+  }
+
+  function hexToRgba(hex){
+    const r = parseInt(hex.slice(1,3),16);
+    const g = parseInt(hex.slice(3,5),16);
+    const b = parseInt(hex.slice(5,7),16);
+    return { r, g, b, a: 255 };
+  }
+
+  async function removeComment(localId){
+    const idx = comments.findIndex(c => c.id === localId);
+    if(idx === -1) return;
+    const c = comments[idx];
+    if(c.markupId && API){
+      try { await API.markup.removeMarkups([c.markupId]); } catch(e){}
+    }
+    comments.splice(idx, 1);
+    renderList();
+  }
+
+  async function focusComment(c){
+    if(!API) return;
+    try {
+      await API.viewer.setCamera({
+        modelObjectIds: [{ modelId: c.modelId, objectRuntimeIds: [c.objectRuntimeId] }]
+      }, { animationTime: 500 });
+    } catch(e){ console.warn(e); }
+  }
+
+  function renderList(){
+    listEl.innerHTML = "";
+    if(!comments.length){
+      listEl.innerHTML = '<div class="empty">Inga kommentarer ännu.<br/>Välj ett objekt i 3D-vyn och klicka på "+ Ny kommentar".</div>';
+      return;
+    }
+    comments.forEach(c => {
+      const card = document.createElement("div");
+      card.className = "comment-card";
+      card.style.setProperty("--card-color", c.color);
+
+      const propsHtml = (settings.showProps && c.props.length)
+        ? `<div class="props">${c.props.slice(0, settings.cardSize === "compact" ? 3 : (settings.cardSize === "large" ? 15 : 6))
+              .map(p => `<div><span class="k">${escapeHtml(p.k)}</span><span class="v">${escapeHtml(p.v)}</span></div>`).join("")}</div>`
+        : "";
+
+      card.innerHTML = `
+        <div class="head">
+          <span class="icon">${c.icon}</span>
+          <span class="title">${escapeHtml(c.title)}</span>
+        </div>
+        <div class="body">
+          <p class="comment-text">${escapeHtml(c.text)}</p>
+          ${propsHtml}
+        </div>
+        <div class="foot">
+          <span>#${c.id}</span>
+          <span class="actions">
+            <button data-act="focus">Zooma till</button>
+            <button data-act="del">Ta bort</button>
+          </span>
+        </div>
+      `;
+      card.querySelector('[data-act="focus"]').onclick = () => focusComment(c);
+      card.querySelector('[data-act="del"]').onclick = () => removeComment(c.id);
+      listEl.appendChild(card);
+    });
+  }
+
+  let currentTitle = "";
+
+  async function refreshSelection(){
+    try{
+      const sel = await API.viewer.getSelection();
+      if(!sel || !sel.length || !sel[0].objectRuntimeIds || !sel[0].objectRuntimeIds.length){
+        currentSelection = null; currentBox = null; currentProperties = []; currentTitle = "";
+        btnAdd.disabled = true;
+        selectionInfoEl.innerHTML = "Inget objekt valt i 3D-vyn.";
+        return;
+      }
+      const modelId = sel[0].modelId;
+      const objectRuntimeId = sel[0].objectRuntimeIds[0];
+      currentSelection = { modelId, objectRuntimeId };
+
+      const [boxes] = await Promise.all([
+        API.viewer.getObjectBoundingBoxes(modelId, [objectRuntimeId])
+      ]);
+      currentBox = boxes && boxes[0] ? boxes[0].boundingBox : { min:{x:0,y:0,z:0}, max:{x:0,y:0,z:0} };
+
+      const propsRes = await API.viewer.getObjectProperties(modelId, [objectRuntimeId]);
+      const obj = propsRes && propsRes[0] ? propsRes[0] : null;
+      currentProperties = [];
+      currentTitle = obj && obj.class ? obj.class : ("Objekt " + objectRuntimeId);
+      if(obj){
+        if(obj.class) currentProperties.push({k:"Klass", v: obj.class});
+        if(obj.product && obj.product.name) currentProperties.push({k:"Produkt", v: obj.product.name});
+        (obj.properties || []).forEach(set => {
+          (set.properties || []).forEach(p => {
+            currentProperties.push({ k: (set.name ? set.name + " – " : "") + (p.name || ""), v: p.value });
+          });
+        });
+      }
+
+      btnAdd.disabled = false;
+      selectionInfoEl.innerHTML = `Valt objekt: <b>${escapeHtml(currentTitle)}</b> (id ${objectRuntimeId})`;
+    } catch(err){
+      console.warn("Kunde inte läsa markering:", err);
+    }
+  }
+
+  async function init(){
+    try{
+      API = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
+        if(event === "viewer.onSelectionChanged"){
+          refreshSelection();
+        }
+      }, 20000);
+      statusEl.textContent = "Ansluten";
+      await refreshSelection();
+    } catch(err){
+      statusEl.textContent = "Kunde inte ansluta";
+      console.error(err);
+    }
+  }
+
+  el("btnRefresh").onclick = refreshSelection;
+
+  renderList();
+  init();
+})();
+</script>
+</body>
+</html>

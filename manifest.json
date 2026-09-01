@@ -1,0 +1,7 @@
+{
+  "url": "https://din-domän.se/index.html",
+  "title": "Snygga kommentarer",
+  "icon": "https://din-domän.se/icon.png",
+  "description": "Placera anpassningsbara kommentar-pins på modellobjekt och hämta IFC-data automatiskt.",
+  "extensionType": ["3dviewer"]
+}
