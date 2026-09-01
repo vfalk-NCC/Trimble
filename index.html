@@ -343,7 +343,9 @@
 
   // Builds a wobbly, hand-drawn-looking closed loop of points around a center,
   // in the world XZ-plane (vertical), to approximate a "cloud" bubble outline.
-  function buildCloudLoop(cx, cy, cz, radiusMM){
+  // NOTE: CloudMarkup expects plain {x,y,z} Vector3 points in METERS,
+  // unlike start/end picks elsewhere which use positionX/Y/Z in millimeters.
+  function buildCloudLoop(cxMM, cyMM, czMM, radiusMM){
     const pts = [];
     const steps = 16;
     for(let i = 0; i <= steps; i++){
@@ -351,11 +353,9 @@
       const wobble = 1 + (Math.sin(t * 3.7) * 0.12) + (Math.cos(t * 5.3) * 0.08);
       const r = radiusMM * wobble;
       pts.push({
-        modelId: currentSelection.modelId,
-        positionX: cx + Math.cos(t) * r,
-        positionY: cy,
-        positionZ: cz + Math.sin(t) * r * 0.6, // flattened a bit, like an oval speech bubble
-        type: "point"
+        x: (cxMM + Math.cos(t) * r) / 1000,
+        y: cyMM / 1000,
+        z: (czMM + Math.sin(t) * r * 0.6) / 1000
       });
     }
     return pts;
@@ -416,7 +416,11 @@
     if(el("bubbleCloud").checked){
       try {
         const points = buildCloudLoop(bx, by, bz, Math.max(400, text.length * 35));
-        const added = await API.markup.addCloudMarkup([{ color: rgba, points }]);
+        const added = await API.markup.addCloudMarkup([{
+          color: rgba,
+          modelId: modelId,
+          points
+        }]);
         if(added && added[0]) markupIds.cloud = added[0].id;
       } catch(err){ console.warn("Kunde inte rita molnram (stöds ev. inte i denna version):", err); }
     }
