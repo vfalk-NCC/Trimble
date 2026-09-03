@@ -76,6 +76,9 @@
     <button class="ghost" id="btnUpdateAll">🔄 Uppdatera alla</button>
     <button class="ghost" id="btnDebugToggle">🐞 Rådata</button>
     <button class="ghost" id="btnDebugCopy">📋 Kopiera rådata</button>
+    <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);margin:0;">
+      <input type="checkbox" id="testModeNoDraw" /> 🧪 Testläge: hämta data men rita inget i 3D-vyn
+    </label>
   </div>
 
   <div id="picker">
@@ -373,6 +376,12 @@
       if(prop) lines.push({ label: propName, value: prop.value });
     }
     lbl.lastValues = lines;
+
+    if(el("testModeNoDraw").checked){
+      log("🧪 Testläge aktivt — ritar INGET i 3D-vyn, bara datan hämtad.");
+      renderLabelList();
+      return;
+    }
 
     const rgba = hexToRgba(lbl.color);
     const base = { xMM: lbl.anchor.xMM + lbl.offset.xMM, yMM: lbl.anchor.yMM + lbl.offset.yMM, zMM: lbl.anchor.zMM + lbl.offset.zMM };
