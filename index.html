@@ -395,18 +395,16 @@
       } catch(err){ log("addTextMarkup misslyckades för rad:", tl.text, err.message||err); }
     }
 
-    // Leader line + small anchor cross at the object itself, same proven technique as other tools.
-    const size = 200;
+    // Leader arrow to the object itself (dropped the extra "cross" markup —
+    // mixing text + line + arrow markups back-to-back for the same object
+    // crashed the whole 3D viewer in testing; keeping this to a single
+    // extra call to isolate whether arrows specifically are the problem).
     const c = lbl.anchor;
-    const cross = [
-      [{xMM:c.xMM-size,yMM:c.yMM,zMM:c.zMM},{xMM:c.xMM+size,yMM:c.yMM,zMM:c.zMM}],
-      [{xMM:c.xMM,yMM:c.yMM-size,zMM:c.zMM},{xMM:c.xMM,yMM:c.yMM+size,zMM:c.zMM}]
-    ];
-    const crossIds = await drawEdgesBatch(lbl.modelId, cross, rgba);
-    lbl.markupIds.push(...crossIds);
+    log("Ritar ledartråd (arrow) till objektet…");
     try {
       const arrow = await API.markup.addArrowMarkups([{ color: rgba, start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM), end: makePick(lbl.modelId, c.xMM, c.yMM, c.zMM) }]);
       if(arrow && arrow[0] && arrow[0].id) lbl.markupIds.push(arrow[0].id);
+      log("Ledartråd klar.");
     } catch(err){ log("Ledartråd (arrow) misslyckades:", err.message||err); }
 
     renderLabelList();
