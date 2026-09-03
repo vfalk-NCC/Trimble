@@ -1,7 +1,7 @@
 {
-  "url": "https://vfalk-ncc.github.io/Trimble/",
-  "title": "Snygga kommentarer",
-  "icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOYKfFku_8wowsfpVicGL7T2NAXhu-QKyrMO3TPxES4w&s=10",
-  "description": "Placera anpassningsbara kommentar-pins på modellobjekt och hämta IFC-data automatiskt.",
+  "url": "https://din-domän.se/property-labels/index.html",
+  "title": "Property Labels",
+  "icon": "https://din-domän.se/property-labels/icon.png",
+  "description": "Skapa etiketter i 3D-vyn med valfria egenskaper (property sets) hämtade direkt från objekten.",
   "extensionType": ["3dviewer"]
 }
