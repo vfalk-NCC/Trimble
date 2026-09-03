@@ -234,7 +234,9 @@
 
   function openPickerForCreate(){
     if(!API) return;
+    log("btnCreate klickad, hämtar markering…");
     API.viewer.getSelection().then(async sel => {
+      log("getSelection gav:", sel);
       if(!sel || !sel.length){
         alert("Välj minst ett objekt i 3D-vyn först, klicka sedan \"+ Skapa label\" igen.");
         return;
@@ -246,7 +248,9 @@
         const modelId = s.modelId;
         for(const objectRuntimeId of (s.objectRuntimeIds || [])){
           try {
+            log("Hämtar egenskaper för", modelId, objectRuntimeId);
             const info = await fetchObjectProperties(modelId, objectRuntimeId);
+            log("Egenskaper hämtade, antal property sets:", info ? info.psets.length : 0);
             if(info) pickerObjects.push({ modelId, objectRuntimeId, ...info });
           } catch(err){ log("getObjectProperties misslyckades för", modelId, objectRuntimeId, ":", err.message||err); }
         }
@@ -324,7 +328,9 @@
       return;
     }
     for(const o of pickerObjects){
+      log("Skapar label för", o.title, "— hämtar bounding box…");
       const anchor = await fetchBoundingBoxCenter(o.modelId, o.objectRuntimeId);
+      log("Bounding box-center:", anchor);
       if(!anchor){ log("Ingen bounding box för", o.title, "— hoppar."); continue; }
       const lbl = {
         id: nextLabelId++,
@@ -370,20 +376,24 @@
 
     const rgba = hexToRgba(lbl.color);
     const base = { xMM: lbl.anchor.xMM + lbl.offset.xMM, yMM: lbl.anchor.yMM + lbl.offset.yMM, zMM: lbl.anchor.zMM + lbl.offset.zMM };
-    const textDefs = [
-      { color: rgba, start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM), text: "🏷️ " + lbl.title }
-    ];
-    lines.forEach((ln, i) => {
-      textDefs.push({
-        color: rgba,
-        start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM - (i+1)*280),
-        text: `${ln.label}: ${ln.value ?? "–"}`
-      });
-    });
-    try {
-      const added = await API.markup.addTextMarkup(textDefs);
-      (added||[]).forEach(m => { if(m && m.id) lbl.markupIds.push(m.id); });
-    } catch(err){ log("addTextMarkup misslyckades:", err.message||err); }
+    const textLines = [{ zOffset: 0, text: "🏷️ " + lbl.title }];
+    lines.forEach((ln, i) => textLines.push({ zOffset: -(i+1)*280, text: `${ln.label}: ${ln.value ?? "–"}` }));
+
+    // One addTextMarkup call PER LINE — batching several text entries into a
+    // single call crashed the whole 3D viewer in testing (needed an F5 to
+    // recover), unlike line/arrow markups which handle batches fine.
+    for(const tl of textLines){
+      log("Ritar textrad:", tl.text);
+      try {
+        const added = await API.markup.addTextMarkup([{
+          color: rgba,
+          start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM + tl.zOffset),
+          text: tl.text
+        }]);
+        if(added && added[0] && added[0].id) lbl.markupIds.push(added[0].id);
+        log("Textrad klar.");
+      } catch(err){ log("addTextMarkup misslyckades för rad:", tl.text, err.message||err); }
+    }
 
     // Leader line + small anchor cross at the object itself, same proven technique as other tools.
     const size = 200;
