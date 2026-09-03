@@ -1,7 +1,7 @@
 {
-  "url": "https://din-domän.se/property-labels/index.html",
+  "url": "https://vfalk-ncc.github.io/Trimble/index.html",
   "title": "Property Labels",
-  "icon": "https://din-domän.se/property-labels/icon.png",
+  "icon": "https://cdn.creazilla.com/icons/7912820/label-icon-md.png",
   "description": "Skapa etiketter i 3D-vyn med valfria egenskaper (property sets) hämtade direkt från objekten.",
   "extensionType": ["3dviewer"]
 }
