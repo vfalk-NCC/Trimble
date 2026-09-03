@@ -77,7 +77,10 @@
     <button class="ghost" id="btnDebugToggle">🐞 Rådata</button>
     <button class="ghost" id="btnDebugCopy">📋 Kopiera rådata</button>
     <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);margin:0;">
-      <input type="checkbox" id="testModeNoDraw" /> 🧪 Testläge: hämta data men rita inget i 3D-vyn
+      <input type="checkbox" id="drawTextEnabled" checked /> Rita text
+    </label>
+    <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);margin:0;">
+      <input type="checkbox" id="drawArrowEnabled" checked /> Rita pil
     </label>
   </div>
 
@@ -377,7 +380,7 @@
     }
     lbl.lastValues = lines;
 
-    if(el("testModeNoDraw").checked){
+    if(el("testModeNoDraw") && el("testModeNoDraw").checked){
       log("🧪 Testläge aktivt — ritar INGET i 3D-vyn, bara datan hämtad.");
       renderLabelList();
       return;
@@ -395,17 +398,21 @@
     // One addTextMarkup call PER LINE — batching several text entries into a
     // single call crashed the whole 3D viewer in testing (needed an F5 to
     // recover), unlike line/arrow markups which handle batches fine.
-    for(const tl of textLines){
-      log("Ritar textrad:", tl.text);
-      try {
-        const added = await API.markup.addTextMarkup([{
-          color: rgba,
-          start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM + tl.zOffset),
-          text: tl.text
-        }]);
-        if(added && added[0] && added[0].id) lbl.markupIds.push(added[0].id);
-        log("Textrad klar.");
-      } catch(err){ log("addTextMarkup misslyckades för rad:", tl.text, err.message||err); }
+    if(el("drawTextEnabled").checked){
+      for(const tl of textLines){
+        log("Ritar textrad:", tl.text);
+        try {
+          const added = await API.markup.addTextMarkup([{
+            color: rgba,
+            start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM + tl.zOffset),
+            text: tl.text
+          }]);
+          if(added && added[0] && added[0].id) lbl.markupIds.push(added[0].id);
+          log("Textrad klar.");
+        } catch(err){ log("addTextMarkup misslyckades för rad:", tl.text, err.message||err); }
+      }
+    } else {
+      log("Text avstängd i testläget — hoppar över.");
     }
 
     // Leader arrow to the object itself (dropped the extra "cross" markup —
@@ -413,12 +420,16 @@
     // crashed the whole 3D viewer in testing; keeping this to a single
     // extra call to isolate whether arrows specifically are the problem).
     const c = lbl.anchor;
-    log("Ritar ledartråd (arrow) till objektet…");
-    try {
-      const arrow = await API.markup.addArrowMarkups([{ color: rgba, start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM), end: makePick(lbl.modelId, c.xMM, c.yMM, c.zMM) }]);
-      if(arrow && arrow[0] && arrow[0].id) lbl.markupIds.push(arrow[0].id);
-      log("Ledartråd klar.");
-    } catch(err){ log("Ledartråd (arrow) misslyckades:", err.message||err); }
+    if(el("drawArrowEnabled").checked){
+      log("Ritar ledartråd (arrow) till objektet…");
+      try {
+        const arrow = await API.markup.addArrowMarkups([{ color: rgba, start: makePick(lbl.modelId, base.xMM, base.yMM, base.zMM), end: makePick(lbl.modelId, c.xMM, c.yMM, c.zMM) }]);
+        if(arrow && arrow[0] && arrow[0].id) lbl.markupIds.push(arrow[0].id);
+        log("Ledartråd klar.");
+      } catch(err){ log("Ledartråd (arrow) misslyckades:", err.message||err); }
+    } else {
+      log("Pil avstängd i testläget — hoppar över.");
+    }
 
     renderLabelList();
   }
