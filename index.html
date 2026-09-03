@@ -392,7 +392,7 @@
       s = String(s ?? "–");
       return s.length > max ? s.slice(0, max-1) + "…" : s;
     }
-    const textLines = [{ zOffset: 0, text: "🏷️ " + truncate(lbl.title, 28) }];
+    const textLines = [{ zOffset: 0, text: truncate(lbl.title, 28) }];
     lines.forEach((ln, i) => textLines.push({ zOffset: -(i+1)*280, text: truncate(`${ln.label}: ${ln.value ?? "–"}`, 32) }));
 
     // One addTextMarkup call PER LINE — batching several text entries into a
